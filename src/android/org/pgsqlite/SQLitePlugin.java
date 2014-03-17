@@ -122,7 +122,7 @@ public class SQLitePlugin extends CordovaPlugin
 					this.executeSqlBatchInBackground(args, cbc);
 			}
 			else if (action.equals("executeSqlBatch")) {
-					this.executeSqlBatch(args, cbc);
+					this.executeSqlBatch(args, cbc, false);
 			}
 
 			return status;
@@ -256,7 +256,7 @@ public class SQLitePlugin extends CordovaPlugin
 		cordova.getThreadPool().execute(new Runnable() {
 			public void run() {
 				synchronized(myself) {
-					executeSqlBatch(args, cbc);
+					executeSqlBatch(args, cbc, true);
 				}
 			}
 		});
@@ -272,8 +272,7 @@ public class SQLitePlugin extends CordovaPlugin
 	 *            Callback context from Cordova API
 	 *
 	 */
-	private void executeSqlBatch(JSONArray args, CallbackContext cbc)
-
+	private void executeSqlBatch(JSONArray args, CallbackContext cbc, boolean bgWorkaround)
 	{
 		String errorMessage = "";
 		String query = "";
@@ -450,6 +449,16 @@ public class SQLitePlugin extends CordovaPlugin
 			}
 
 			batchResults.put(r);
+		} finally {
+			// SQLitePlugin.js sends COMMIT in a separate batch,
+			// so when a call is asyncronous a transaction finishes abruptly
+			if (bgWorkaround && mydb != null && mydb.inTransaction()) {
+				if ("".equals(errorMessage)) {
+					mydb.setTransactionSuccessful();
+				}
+				Log.d(TAG, "executeSqlBatch bgWorkaround endTransaction " + errorMessage);
+				mydb.endTransaction();
+			}
 		}
 
 		cbc.success(batchResults);
