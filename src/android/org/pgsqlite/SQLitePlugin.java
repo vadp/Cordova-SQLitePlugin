@@ -28,6 +28,9 @@ import android.util.Log;
 
 public class SQLitePlugin extends CordovaPlugin
 {
+
+	public static final String TAG = "SQLitePlugin";
+
 	/**
 	 * Multiple database map (static).
 	 */
@@ -115,45 +118,11 @@ public class SQLitePlugin extends CordovaPlugin
 
 				this.sendJavascriptCB("window.SQLitePluginCallback.p1('" + id + "', " + result + ");");
 			}
-			else if (action.equals("executeSqlBatch") || action.equals("executeBatchTransaction") || action.equals("backgroundExecuteSqlBatch"))
-			{
-				String[] 	queries 	= null;
-				String[] 	queryIDs 	= null;
-
-				JSONArray 	jsonArr 	= null;
-				int 		paramLen	= 0;
-				JSONArray[] 	jsonparams 	= null;
-
-				JSONObject allargs = args.getJSONObject(0);
-				JSONObject dbargs = allargs.getJSONObject("dbargs");
-				String dbName = dbargs.getString("dbname");
-				JSONArray txargs = allargs.getJSONArray("executes");
-
-				if (txargs.isNull(0)) {
-					queries = new String[0];
-				} else {
-					int len = txargs.length();
-					queries = new String[len];
-					queryIDs = new String[len];
-					jsonparams = new JSONArray[len];
-
-					for (int i = 0; i < len; i++)
-					{
-						JSONObject a	= txargs.getJSONObject(i);
-						queries[i] 	= a.getString("sql");
-						queryIDs[i] = a.getString("qid");
-						jsonArr 	= a.getJSONArray("params");
-						paramLen	= jsonArr.length();
-						jsonparams[i] 	= jsonArr;
-					}
-				}
-
-				boolean ex = action.equals("executeBatchTransaction");
-
-				if (action.equals("backgroundExecuteSqlBatch"))
-					this.executeSqlBatchInBackground(dbName, queries, jsonparams, queryIDs, cbc);
-				else
-					this.executeSqlBatch(dbName, queries, jsonparams, queryIDs, cbc);
+			else if (action.equals("backgroundExecuteSqlBatch")) {
+					this.executeSqlBatchInBackground(args, cbc);
+			}
+			else if (action.equals("executeSqlBatch")) {
+					this.executeSqlBatch(args, cbc);
 			}
 
 			return status;
@@ -199,7 +168,7 @@ public class SQLitePlugin extends CordovaPlugin
 		File dbfile = this.cordova.getActivity().getDatabasePath(dbname + ".db");
 
 		if (!dbfile.exists()) {
-		    dbfile.getParentFile().mkdirs();
+			dbfile.getParentFile().mkdirs();
 		}
 
 		Log.v("info", "Open sqlite db: " + dbfile.getAbsolutePath());
@@ -271,259 +240,216 @@ public class SQLitePlugin extends CordovaPlugin
 	}
 
 	/**
-	 * Executes a batch request IN BACKGROUND THREAD and sends the results via sendJavascriptCB().
+	 * Executes a batch request IN BACKGROUND THREAD and sends the results back.
 	 *
-	 * @param dbName
-	 *            The name of the database.
-	 *
-	 * @param queryarr
-	 *            Array of query strings
-	 *
-	 * @param jsonparams
-	 *            Array of JSON query parameters
-	 *
-	 * @param queryIDs
-	 *            Array of query ids
+	 * @param args
+	 *            query arguments (from plugin exec)
 	 *
 	 * @param cbc
 	 *            Callback context from Cordova API
 	 *
 	 */
-	private void executeSqlBatchInBackground(final String dbName,
-		final String[] queryarr, final JSONArray[] jsonparams, final String[] queryIDs, final CallbackContext cbc)
+	private void executeSqlBatchInBackground(final JSONArray args, final CallbackContext cbc)
 	{
 		final SQLitePlugin myself = this;
 
-		this.cordova.getThreadPool().execute(new Runnable() {
+		cordova.getThreadPool().execute(new Runnable() {
 			public void run() {
 				synchronized(myself) {
-					myself.executeSqlBatch(dbName, queryarr, jsonparams, queryIDs, cbc);
+					executeSqlBatch(args, cbc);
 				}
 			}
 		});
 	}
 
 	/**
-	 * Executes a batch request and sends the results via sendJavascriptCB().
+	 * Executes a batch request and sends the results back.
 	 *
-	 * @param dbname
-	 *            The name of the database.
-	 *
-	 * @param queryarr
-	 *            Array of query strings
-	 *
-	 * @param jsonparams
-	 *            Array of JSON query parameters
-	 *
-	 * @param queryIDs
-	 *            Array of query ids
+	 * @param args
+	 *            query arguments (from plugin exec)
 	 *
 	 * @param cbc
 	 *            Callback context from Cordova API
 	 *
 	 */
-	private void executeSqlBatch(String dbname, String[] queryarr, JSONArray[] jsonparams, String[] queryIDs, CallbackContext cbc)
+	private void executeSqlBatch(JSONArray args, CallbackContext cbc)
+
 	{
-		SQLiteDatabase mydb = this.getDatabase(dbname);
-
-		if (mydb == null) return;
-
+		String errorMessage = "";
 		String query = "";
 		String query_id = "";
-		int len = queryarr.length;
+		SQLiteDatabase mydb = null;
+		JSONArray batchResults = null;
 
-		JSONArray batchResults = new JSONArray();
+		try {
+			JSONObject allargs = args.getJSONObject(0);
+			JSONObject dbargs = allargs.getJSONObject("dbargs");
+			String dbName = dbargs.getString("dbname");
+			JSONArray txQueue = allargs.optJSONArray("executes");
+			if (txQueue != null && txQueue.isNull(0))
+				txQueue = null;
 
-		for (int i = 0; i < len; i++) {
-			query_id = queryIDs[i];
+			mydb = this.getDatabase(dbName);
 
-			JSONObject queryResult = null;
-			String errorMessage = "unknown";
+			batchResults = new JSONArray();
 
-			try {
-				boolean needRawQuery = true;
+			int len = txQueue == null ? 0 : txQueue.length();
+			for (int i = 0; i < len; i++) {
+				JSONObject queryJSON = txQueue.getJSONObject(i);
 
-				query = queryarr[i];
+				query_id = queryJSON.getString("qid");
+				query = queryJSON.getString("sql");
+				JSONArray jsonparams = queryJSON.optJSONArray("params");
+
+				JSONObject queryResult = null;
+
+				String[] qSplit = query.split("\\W");
+				String command = qSplit.length > 0 ? qSplit[0].toUpperCase() : "";
+
+				Log.d(TAG, "executeSqlBatch "+dbName+": ("+ command+ ") " +query);
+
+				if (mydb == null) {
+					Log.d(TAG, "executeSqlBatch Db is not opened: " + dbName);
+				}
+
+				queryResult = new JSONObject();
 
 				// UPDATE or DELETE:
 				// NOTE: this code should be safe to RUN with old Android SDK.
 				// To BUILD with old Android SDK remove lines from HERE: {{
 				if (android.os.Build.VERSION.SDK_INT >= 11 &&
-				    (query.toLowerCase().startsWith("update") ||
-				     query.toLowerCase().startsWith("delete")))
+					("UPDATE".equals(command) || "DELETE".equals(command)))
 				{
 					SQLiteStatement myStatement = mydb.compileStatement(query);
 
 					if (jsonparams != null) {
-						for (int j = 0; j < jsonparams[i].length(); j++) {
-							if (jsonparams[i].get(j) instanceof Float || jsonparams[i].get(j) instanceof Double ) {
-								myStatement.bindDouble(j + 1, jsonparams[i].getDouble(j));
-							} else if (jsonparams[i].get(j) instanceof Number) {
-								myStatement.bindLong(j + 1, jsonparams[i].getLong(j));
-							} else if (jsonparams[i].isNull(j)) {
+						for (int j = 0; j < jsonparams.length(); j++) {
+							if (jsonparams.get(j) instanceof Float || jsonparams.get(j) instanceof Double ) {
+								myStatement.bindDouble(j + 1, jsonparams.getDouble(j));
+							} else if (jsonparams.get(j) instanceof Number) {
+								myStatement.bindLong(j + 1, jsonparams.getLong(j));
+							} else if (jsonparams.isNull(j)) {
 								myStatement.bindNull(j + 1);
 							} else {
-								myStatement.bindString(j + 1, jsonparams[i].getString(j));
+								myStatement.bindString(j + 1, jsonparams.getString(j));
 							}
 						}
 					}
 
-					int rowsAffected = -1; // (assuming invalid)
-
 					// Use try & catch just in case android.os.Build.VERSION.SDK_INT >= 11 is lying:
 					try {
-						rowsAffected = myStatement.executeUpdateDelete();
-						// Indicate valid results:
-						needRawQuery = false;
+						int rowsAffected = myStatement.executeUpdateDelete();
+
+						queryResult.put("rowsAffected", rowsAffected);
 					} catch (SQLiteException ex) {
 						// Indicate problem & stop this query:
-						ex.printStackTrace();
-						errorMessage = ex.getMessage();
-						Log.v("executeSqlBatch", "SQLiteStatement.executeUpdateDelete(): Error=" +  errorMessage);
-						needRawQuery = false;
-					} catch (Exception ex) {
-						// Assuming SDK_INT was lying & method not found:
-						// do nothing here & try again with raw query.
-					}
+						throw ex;
 
-					if (rowsAffected != -1) {
-						queryResult = new JSONObject();
-						queryResult.put("rowsAffected", rowsAffected);
-					}
-				} // to HERE. }}
+						//~ ex.printStackTrace();
+						//~ errorMessage = ex.getMessage();
+						//~ Log.d(TAG, "executeSqlBatch executeUpdateDelete(): Error=" +  errorMessage);
 
-				// INSERT:
-				if (query.toLowerCase().startsWith("insert") && jsonparams != null) {
-					needRawQuery = false;
+					//~ } catch (Exception ex) {
+						//~ // Assuming SDK_INT was lying & method not found:
+						//~ // do nothing here & try again with raw query.
+					}
+				}
+				else // to HERE. }}
+
+				if ("INSERT".equals(command) && jsonparams != null) {
 
 					SQLiteStatement myStatement = mydb.compileStatement(query);
 
-					for (int j = 0; j < jsonparams[i].length(); j++) {
-						if (jsonparams[i].get(j) instanceof Float || jsonparams[i].get(j) instanceof Double ) {
-							myStatement.bindDouble(j + 1, jsonparams[i].getDouble(j));
-						} else if (jsonparams[i].get(j) instanceof Number) {
-							myStatement.bindLong(j + 1, jsonparams[i].getLong(j));
-						} else if (jsonparams[i].isNull(j)) {
+					for (int j = 0; j < jsonparams.length(); j++) {
+						if (jsonparams.get(j) instanceof Float || jsonparams.get(j) instanceof Double ) {
+							myStatement.bindDouble(j + 1, jsonparams.getDouble(j));
+						} else if (jsonparams.get(j) instanceof Number) {
+							myStatement.bindLong(j + 1, jsonparams.getLong(j));
+						} else if (jsonparams.isNull(j)) {
 							myStatement.bindNull(j + 1);
 						} else {
-							myStatement.bindString(j + 1, jsonparams[i].getString(j));
+							myStatement.bindString(j + 1, jsonparams.getString(j));
 						}
 					}
 
-					long insertId = -1; // (invalid)
-
-					try {
-						insertId = myStatement.executeInsert();
-					} catch (SQLiteException ex) {
-						ex.printStackTrace();
-						errorMessage = ex.getMessage();
-						Log.v("executeSqlBatch", "SQLiteDatabase.executeInsert(): Error=" +  errorMessage);
-					}
-
-					if (insertId != -1) {
-						queryResult = new JSONObject();
+						long insertId = myStatement.executeInsert();
 						queryResult.put("insertId", insertId);
-						queryResult.put("rowsAffected", 1);
-					}
+						queryResult.put("rowsAffected", insertId != -1 ? 1 : 0);
 				}
+				else if ("BEGIN".equals(command)) {
+					mydb.beginTransaction();
 
-				if (query.toLowerCase().startsWith("begin")) {
-					needRawQuery = false;
-					try {
-						mydb.beginTransaction();
-
-						queryResult = new JSONObject();
-						queryResult.put("rowsAffected", 0);
-					} catch (SQLiteException ex) {
-						ex.printStackTrace();
-						errorMessage = ex.getMessage();
-						Log.v("executeSqlBatch", "SQLiteDatabase.beginTransaction(): Error=" +  errorMessage);
-					}
+					queryResult.put("rowsAffected", 0);
 				}
-
-				if (query.toLowerCase().startsWith("commit")) {
-					needRawQuery = false;
-					try {
+				else if ("COMMIT".equals(command)) {
+					if (mydb.inTransaction()) {
 						mydb.setTransactionSuccessful();
 						mydb.endTransaction();
-
-						queryResult = new JSONObject();
-						queryResult.put("rowsAffected", 0);
-					} catch (SQLiteException ex) {
-						ex.printStackTrace();
-						errorMessage = ex.getMessage();
-						Log.v("executeSqlBatch", "SQLiteDatabase.setTransactionSuccessful/endTransaction(): Error=" +  errorMessage);
 					}
+
+					queryResult.put("rowsAffected", 0);
 				}
+				else if ("ROLLBACK".equals(command)) {
+					mydb.endTransaction();
 
-				if (query.toLowerCase().startsWith("rollback")) {
-					needRawQuery = false;
-					try {
-						mydb.endTransaction();
-
-						queryResult = new JSONObject();
-						queryResult.put("rowsAffected", 0);
-					} catch (SQLiteException ex) {
-						ex.printStackTrace();
-						errorMessage = ex.getMessage();
-						Log.v("executeSqlBatch", "SQLiteDatabase.endTransaction(): Error=" +  errorMessage);
-					}
+					queryResult.put("rowsAffected", 0);
 				}
-
-				// raw query for other statements:
-				if (needRawQuery) {
+				else {
+					// raw query for other statements:
 					String[] params = null;
 
 					if (jsonparams != null) {
-						params = new String[jsonparams[i].length()];
+						params = new String[jsonparams.length()];
 
-						for (int j = 0; j < jsonparams[i].length(); j++) {
-							if (jsonparams[i].isNull(j))
+						for (int j = 0; j < jsonparams.length(); j++) {
+							if (jsonparams.isNull(j))
 								params[j] = "";
 							else
-								params[j] = jsonparams[i].getString(j);
+								params[j] = jsonparams.getString(j);
 						}
 					}
 
-					Cursor myCursor = mydb.rawQuery(query, params);
+					Cursor myCursor = null;
+					try {
+						myCursor = mydb.rawQuery(query, params);
 
-					if (query_id.length() > 0) {
-						queryResult = this.getRowsResultFromQuery(myCursor);
+						if (query_id.length() > 0) {
+							queryResult = getRowsResultFromQuery(myCursor);
+						}
+					} finally {
+						if (myCursor != null)
+							myCursor.close();
 					}
-
-					myCursor.close();
 				}
-			} catch (Exception ex) {
-				ex.printStackTrace();
-				errorMessage = ex.getMessage();
-				Log.v("executeSqlBatch", "SQLitePlugin.executeSql[Batch](): Error=" +  errorMessage);
+
+				JSONObject r = new JSONObject();
+				r.put("qid", query_id);
+
+				r.put("type", "success");
+				r.put("result", queryResult);
+
+				batchResults.put(r);
 			}
+
+		} catch (Exception ex) {
+			ex.printStackTrace();
+			errorMessage = ex.getMessage();
+			Log.e(TAG, "executeSqlBatch error executing " +  query + ": " + errorMessage);
+
+			JSONObject r = new JSONObject();
 
 			try {
-				if (queryResult != null) {
-					JSONObject r = new JSONObject();
-					r.put("qid", query_id);
+				r.put("qid", query_id);
+				r.put("type", "error");
 
-					r.put("type", "success");
-					r.put("result", queryResult);
-
-					batchResults.put(r);
-				} else {
-					JSONObject r = new JSONObject();
-					r.put("qid", query_id);
-					r.put("type", "error");
-
-					JSONObject er = new JSONObject();
-					er.put("message", errorMessage);
-					r.put("result", er);
-
-					batchResults.put(r);
-				}
-			} catch (JSONException ex) {
-				ex.printStackTrace();
-				Log.v("executeSqlBatch", "SQLitePlugin.executeSql[Batch](): Error=" +  ex.getMessage());
-				// TODO what to do?
+				JSONObject er = new JSONObject();
+				er.put("message", errorMessage);
+				r.put("result", er);
+			} catch (JSONException x) {
+				Log.e(TAG, "executeSqlBatch error creating error message ");
 			}
+
+			batchResults.put(r);
 		}
 
 		cbc.success(batchResults);
