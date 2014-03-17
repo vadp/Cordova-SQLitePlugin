@@ -19,6 +19,9 @@ import java.util.HashMap;
 import org.apache.cordova.CordovaPlugin;
 import org.apache.cordova.CallbackContext;
 
+import org.apache.cordova.file.FileUtils;
+import java.net.MalformedURLException;
+
 import android.database.Cursor;
 
 import android.database.sqlite.*;
@@ -163,15 +166,26 @@ public class SQLitePlugin extends CordovaPlugin
 	 */
 	private void openDatabase(String dbname, String password)
 	{
-		if (this.getDatabase(dbname) != null) this.closeDatabase(dbname);
+		if (this.getDatabase(dbname) != null)
+			this.closeDatabase(dbname);
 
-		File dbfile = this.cordova.getActivity().getDatabasePath(dbname + ".db");
+		File dbfile;
+		FileUtils filePlugin = (FileUtils) webView.pluginManager.getPlugin("File");
+
+		try { // Try to resolve dbname to abs path
+			String path = filePlugin.filesystemPathForURL(dbname);
+			dbfile = new File(path);
+		} catch (MalformedURLException e) {
+			// The filesystem url wasn't recognized
+			// follow the old behaviour
+			dbfile = this.cordova.getActivity().getDatabasePath(dbname + ".db");
+		}
 
 		if (!dbfile.exists()) {
 			dbfile.getParentFile().mkdirs();
 		}
 
-		Log.v("info", "Open sqlite db: " + dbfile.getAbsolutePath());
+		Log.d(TAG, "openDatabase: " + dbfile.getAbsolutePath());
 
 		SQLiteDatabase mydb = SQLiteDatabase.openOrCreateDatabase(dbfile, null);
 
