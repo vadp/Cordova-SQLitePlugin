@@ -466,7 +466,24 @@ public class SQLitePlugin extends CordovaPlugin
 			} else if (jsonparams.isNull(j)) {
 				myStatement.bindNull(j + 1);
 			} else {
-				myStatement.bindString(j + 1, jsonparams.getString(j));
+				String strParm = jsonparams.getString(j);
+				// try to parse dataURI
+				if (strParm.startsWith("data:")) {
+					final String b64_patt = ";base64,";
+					int b64_idx = strParm.indexOf(b64_patt);
+					if (b64_idx != -1) {
+						try {
+							String blob64 = strParm.substring(b64_idx + b64_patt.length());
+							byte[] blob = Base64.decode(blob64, Base64.DEFAULT);
+							myStatement.bindBlob(j + 1, blob);
+							strParm = null;
+						} catch (IllegalArgumentException ex) {
+						}
+					}
+				}
+				// it's not a dataURI
+				if (null != strParm)
+					myStatement.bindString(j + 1, strParm);
 			}
 		}
 	}
