@@ -321,19 +321,7 @@ public class SQLitePlugin extends CordovaPlugin
 				{
 					SQLiteStatement myStatement = mydb.compileStatement(query);
 
-					if (jsonparams != null) {
-						for (int j = 0; j < jsonparams.length(); j++) {
-							if (jsonparams.get(j) instanceof Float || jsonparams.get(j) instanceof Double ) {
-								myStatement.bindDouble(j + 1, jsonparams.getDouble(j));
-							} else if (jsonparams.get(j) instanceof Number) {
-								myStatement.bindLong(j + 1, jsonparams.getLong(j));
-							} else if (jsonparams.isNull(j)) {
-								myStatement.bindNull(j + 1);
-							} else {
-								myStatement.bindString(j + 1, jsonparams.getString(j));
-							}
-						}
-					}
+					pushParams(myStatement, jsonparams);
 
 					// Use try & catch just in case android.os.Build.VERSION.SDK_INT >= 11 is lying:
 					try {
@@ -359,21 +347,11 @@ public class SQLitePlugin extends CordovaPlugin
 
 					SQLiteStatement myStatement = mydb.compileStatement(query);
 
-					for (int j = 0; j < jsonparams.length(); j++) {
-						if (jsonparams.get(j) instanceof Float || jsonparams.get(j) instanceof Double ) {
-							myStatement.bindDouble(j + 1, jsonparams.getDouble(j));
-						} else if (jsonparams.get(j) instanceof Number) {
-							myStatement.bindLong(j + 1, jsonparams.getLong(j));
-						} else if (jsonparams.isNull(j)) {
-							myStatement.bindNull(j + 1);
-						} else {
-							myStatement.bindString(j + 1, jsonparams.getString(j));
-						}
-					}
+					pushParams(myStatement, jsonparams);
 
-						long insertId = myStatement.executeInsert();
-						queryResult.put("insertId", insertId);
-						queryResult.put("rowsAffected", insertId != -1 ? 1 : 0);
+					long insertId = myStatement.executeInsert();
+					queryResult.put("insertId", insertId);
+					queryResult.put("rowsAffected", insertId != -1 ? 1 : 0);
 				}
 				else if ("BEGIN".equals(command)) {
 					mydb.beginTransaction();
@@ -462,6 +440,35 @@ public class SQLitePlugin extends CordovaPlugin
 		}
 
 		cbc.success(batchResults);
+	}
+
+	/**
+	 * Push parameters into SQL statement.
+	 *
+	 * @param myStatement
+	 *            Compled SQL statement
+	 *
+	 * @param jsonparams
+	 *            SQL statement parameters
+	 *
+	 */
+	private void pushParams(SQLiteStatement myStatement, JSONArray jsonparams)
+	throws JSONException
+	{
+		if (jsonparams == null)
+			return;
+
+		for (int j = 0; j < jsonparams.length(); j++) {
+			if (jsonparams.get(j) instanceof Float || jsonparams.get(j) instanceof Double ) {
+				myStatement.bindDouble(j + 1, jsonparams.getDouble(j));
+			} else if (jsonparams.get(j) instanceof Number) {
+				myStatement.bindLong(j + 1, jsonparams.getLong(j));
+			} else if (jsonparams.isNull(j)) {
+				myStatement.bindNull(j + 1);
+			} else {
+				myStatement.bindString(j + 1, jsonparams.getString(j));
+			}
+		}
 	}
 
 	/**
