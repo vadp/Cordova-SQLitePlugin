@@ -23,6 +23,7 @@ import org.apache.cordova.file.FileUtils;
 import java.net.MalformedURLException;
 
 import android.database.Cursor;
+import android.database.DatabaseErrorHandler;
 
 import android.database.sqlite.*;
 
@@ -75,10 +76,7 @@ public class SQLitePlugin extends CordovaPlugin
 			boolean status = true;
 
 			if (action.equals("open")) {
-				JSONObject o = args.getJSONObject(0);
-				String dbname = o.getString("name");
-
-				this.openDatabase(dbname, null);
+				this.openDatabase(args, cbc);
 			}
 			else if (action.equals("close")) {
 				JSONObject o = args.getJSONObject(0);
@@ -157,15 +155,19 @@ public class SQLitePlugin extends CordovaPlugin
 	/**
 	 * Open a database.
 	 *
-	 * @param dbname
-	 *            The name of the database-NOT including its extension.
+	 * @param args
+	 *            plugin arguments
 	 *
-	 * @param password
-	 *            The database password or null.
+	 * @param cbc
+	 *            Callback context from Cordova API
 	 *
 	 */
-	private void openDatabase(String dbname, String password)
+	private void openDatabase(final JSONArray args, final CallbackContext cbc)
+	throws JSONException
 	{
+		JSONObject o = args.getJSONObject(0);
+		String dbname = o.getString("name");
+
 		if (this.getDatabase(dbname) != null)
 			this.closeDatabase(dbname);
 
@@ -173,23 +175,43 @@ public class SQLitePlugin extends CordovaPlugin
 		FileUtils filePlugin = (FileUtils) webView.pluginManager.getPlugin("File");
 
 		try { // Try to resolve dbname to abs path
-			String path = filePlugin.filesystemPathForURL(dbname);
-			dbfile = new File(path);
+			dbfile = new File(filePlugin.filesystemPathForURL(dbname));
 		} catch (MalformedURLException e) {
 			// The filesystem url wasn't recognized
 			// follow the old behaviour
 			dbfile = this.cordova.getActivity().getDatabasePath(dbname + ".db");
 		}
 
+		String dbpath = dbfile.getAbsolutePath();
+
 		if (!dbfile.exists()) {
 			dbfile.getParentFile().mkdirs();
 		}
 
-		Log.d(TAG, "openDatabase: " + dbfile.getAbsolutePath());
+		Log.d(TAG, "openDatabase: " + dbpath);
 
-		SQLiteDatabase mydb = SQLiteDatabase.openOrCreateDatabase(dbfile, null);
+		try {
+			SQLiteDatabase mydb = SQLiteDatabase.openDatabase(
+				dbpath,
+				null,
+				SQLiteDatabase.CREATE_IF_NECESSARY,
+				new DatabaseErrorHandler () {
+					public void onCorruption(SQLiteDatabase dbObj) {
+						// prevent from automatic file deletion
+						throw new SQLiteException("file is corrupted");
+					}
+				}
+			);
 
-		dbmap.put(dbname, mydb);
+			dbmap.put(dbname, mydb);
+
+			cbc.success();
+		} catch (SQLiteException ex) {
+			String msg = ex.getMessage();
+			Log.d(TAG, "openDatabase: Error " + dbpath + " " + msg);
+
+			cbc.error(msg);
+		}
 	}
 
 	/**
