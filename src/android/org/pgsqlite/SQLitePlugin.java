@@ -316,11 +316,9 @@ public class SQLitePlugin extends CordovaPlugin
 	 */
 	private void executeSqlBatchInBackground(final JSONArray args, final CallbackContext cbc)
 	{
-		final SQLitePlugin myself = this;
-
 		cordova.getThreadPool().execute(new Runnable() {
 			public void run() {
-				synchronized(myself) {
+				synchronized(dbmap) {
 					executeSqlBatch(args, cbc, true);
 				}
 			}
