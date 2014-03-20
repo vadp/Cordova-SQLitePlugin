@@ -142,8 +142,10 @@
     this.success = success;
     this.txlock = txlock;
     this.executes = [];
+    var self = this;
     if (txlock) {
       this.executeSql("BEGIN", [], null, function(tx, err) {
+        self.txlock = false;
         throw new Error("unable to begin transaction: " + err.message);
       });
     }
@@ -234,10 +236,11 @@
             txFailure = err;
           }
         }
+        if (txFailure) {
+          tx.abort(txFailure);
+        } else
         if (--waiting === 0) {
-          if (txFailure) {
-            tx.abort(txFailure);
-          } else if (tx.executes.length > 0) {
+          if (tx.executes.length > 0) {
             /*
             new requests have been issued by the callback
             handlers, so run another batch.
@@ -312,7 +315,8 @@
       }
     };
     this.finalized = true;
-    if (this.txlock) {
+    if (this.txlock && !navigator.userAgent.match(/Android/i)) {
+      // Android rolls back automatically
       this.executeSql("ROLLBACK", [], succeeded, failed);
       this.run();
     } else {
