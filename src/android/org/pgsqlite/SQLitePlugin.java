@@ -76,7 +76,13 @@ public class SQLitePlugin extends CordovaPlugin
 			boolean status = true;
 
 			if (action.equals("open")) {
-				this.openDatabase(args, cbc);
+				JSONObject o = args.getJSONObject(0);
+				String dbname = o.getString("name");
+
+				if (o.optInt("bgType", 0) == 1)
+					this.openDatabaseAsync(dbname, cbc);
+				else
+					this.openDatabase(dbname, cbc);
 			}
 			else if (action.equals("close")) {
 				JSONObject o = args.getJSONObject(0);
@@ -153,6 +159,27 @@ public class SQLitePlugin extends CordovaPlugin
 	// --------------------------------------------------------------------------
 
 	/**
+	 * Open a database, asyncronously
+	 *
+	 * @param args
+	 *            plugin arguments
+	 *
+	 * @param cbc
+	 *            Callback context from Cordova API
+	 *
+	 */
+	private void openDatabaseAsync(final String dbname, final CallbackContext cbc)
+	{
+		cordova.getThreadPool().execute(new Runnable() {
+			public void run() {
+				synchronized(dbmap) {
+					openDatabase(dbname, cbc);
+				}
+			}
+		});
+	}
+
+	/**
 	 * Open a database.
 	 *
 	 * @param args
@@ -162,12 +189,8 @@ public class SQLitePlugin extends CordovaPlugin
 	 *            Callback context from Cordova API
 	 *
 	 */
-	private void openDatabase(final JSONArray args, final CallbackContext cbc)
-	throws JSONException
+	private void openDatabase(String dbname, CallbackContext cbc)
 	{
-		JSONObject o = args.getJSONObject(0);
-		String dbname = o.getString("name");
-
 		if (this.getDatabase(dbname) != null)
 			this.closeDatabase(dbname);
 
@@ -209,8 +232,14 @@ public class SQLitePlugin extends CordovaPlugin
 		} catch (SQLiteException ex) {
 			String msg = ex.getMessage();
 			Log.d(TAG, "openDatabase: Error " + dbpath + " " + msg);
+			try {
+				JSONObject er = new JSONObject();
+				er.put("message", msg);
 
-			cbc.error(msg);
+				cbc.error(er);
+			} catch (JSONException x) {
+				Log.e(TAG, "openDatabase failure creating error message ");
+			}
 		}
 	}
 
