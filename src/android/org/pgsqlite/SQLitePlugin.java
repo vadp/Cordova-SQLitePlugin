@@ -370,10 +370,11 @@ public class SQLitePlugin extends CordovaPlugin
 				String[] qSplit = query.split("\\W");
 				String command = qSplit.length > 0 ? qSplit[0].toUpperCase() : "";
 
-				Log.d(TAG, "executeSqlBatch "+dbName+": ("+ command+ ") " +query);
+				Log.d(TAG, "executeSqlBatch "+dbName+": " +query);
 
 				if (mydb == null) {
-					Log.d(TAG, "executeSqlBatch Db is not opened: " + dbName);
+					// query_id is ready
+					throw new Exception("database is not opened");
 				}
 
 				queryResult = new JSONObject();
