@@ -343,6 +343,9 @@ public class SQLitePlugin extends CordovaPlugin
 		SQLiteDatabase mydb = null;
 		JSONArray batchResults = new JSONArray();
 
+		SQLiteStatement myStatement = null;
+		String compliedTxt = "";
+
 		try {
 			JSONObject allargs = args.getJSONObject(0);
 			JSONObject dbargs = allargs.getJSONObject("dbargs");
@@ -382,7 +385,8 @@ public class SQLitePlugin extends CordovaPlugin
 				if (android.os.Build.VERSION.SDK_INT >= 11 &&
 					("UPDATE".equals(command) || "DELETE".equals(command)))
 				{
-					SQLiteStatement myStatement = mydb.compileStatement(query);
+					if (!compliedTxt.equals(query))
+						myStatement = mydb.compileStatement(query);
 
 					pushParams(myStatement, jsonparams);
 
@@ -409,7 +413,8 @@ public class SQLitePlugin extends CordovaPlugin
 
 				if ("INSERT".equals(command) && jsonparams != null) {
 
-					SQLiteStatement myStatement = mydb.compileStatement(query);
+					if (!compliedTxt.equals(query))
+						myStatement = mydb.compileStatement(query);
 
 					pushParams(myStatement, jsonparams);
 
