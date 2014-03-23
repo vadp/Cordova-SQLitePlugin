@@ -207,7 +207,8 @@ public class SQLitePlugin extends CordovaPlugin
 
 		String dbpath = dbfile.getAbsolutePath();
 
-		if (!dbfile.exists()) {
+		boolean exists = dbfile.exists();
+		if (!exists) {
 			dbfile.getParentFile().mkdirs();
 		}
 
@@ -228,7 +229,14 @@ public class SQLitePlugin extends CordovaPlugin
 
 			dbmap.put(dbname, mydb);
 
-			cbc.success();
+			JSONObject reply = new JSONObject();
+			try {
+				reply.put("created", !exists);
+			} catch (JSONException ex) {
+				Log.e(TAG, "openDatabase failure creating reply");
+			}
+
+			cbc.success(reply);
 		} catch (SQLiteException ex) {
 			String msg = ex.getMessage();
 			Log.d(TAG, "openDatabase: Error " + dbpath + " " + msg);
