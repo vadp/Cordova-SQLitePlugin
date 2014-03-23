@@ -14,9 +14,17 @@
     this.dbname = dbname;
     this.openSuccess = openSuccess;
     this.openError = openError;
-    this.openSuccess || (this.openSuccess = function() {
-      console.log("DB opened: " + dbname);
-    });
+    var self = this;
+    this.openSuccess = function(res) {
+      if (res && res.created && openargs.creationCallback) {
+        openargs.creationCallback(self);
+      }
+      if (openSuccess) {
+        openSuccess(res);
+      } else {
+        console.log("DB opened: " + dbname);
+      }
+    };
     this.openError || (this.openError = function(e) {
       console.log(e.message);
     });
@@ -369,15 +377,16 @@
       okcb = null;
       errorcb = null;
       if (first.constructor === String) {
-        openargs = {
-          name: first
-        };
-        if (arguments.length >= 5) {
-          okcb = arguments[4];
-          if (arguments.length > 5) {
-            errorcb = arguments[5];
-          }
-        }
+        // openDatabase(name, version, displayName, estimatedSize, creationCallback, openargs);
+        openargs = arguments[5] || {};
+        openargs.name = openargs.name || arguments[0];
+        openargs.creationCallback = arguments[4];
+        //~ if (arguments.length >= 5) {
+          //~ okcb = arguments[4];
+          //~ if (arguments.length > 5) {
+            //~ errorcb = arguments[5];
+          //~ }
+        //~ }
       } else {
         openargs = first;
         if (arguments.length >= 2) {
