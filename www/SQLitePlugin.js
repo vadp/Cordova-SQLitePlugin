@@ -13,23 +13,40 @@
     this.openargs = openargs;
     this.dbname = dbname;
     this.openSuccess = openSuccess;
-    this.openError = openError;
-    var self = this;
-    this.openSuccess = function(res) {
-      if (res && res.created && openargs.creationCallback) {
-        openargs.creationCallback(self);
-      }
-      if (openSuccess) {
-        openSuccess(res);
-      } else {
-        console.log("DB opened: " + dbname);
-      }
-    };
-    this.openError || (this.openError = function(e) {
+    this.openError = openError || function(e) {
       console.log(e.message);
-    });
+    };
     this.bg = !openargs.bgType ? (navigator.userAgent.match(/iPad/i)) || (navigator.userAgent.match(/iPhone/i)) : openargs.bgType === 1;
-    this.open(this.openSuccess, this.openError);
+    if (this.bg) {
+      this.txQ = ['wait to open'];
+    }
+    var self = this;
+    this.open(
+      function(res) {
+        self.openCallback(res)
+      },
+      this.openError);
+  };
+
+  SQLitePlugin.prototype.openCallback = function(res) {
+    if (this.openSuccess) {
+      this.openSuccess(res);
+    } else {
+      console.log("DB opened: " + this.dbname);
+    }
+
+    // prepend transaction queue with creation transaction if any
+    if (this.bg) {
+      var oldTxQ = this.txQ.slice(1);
+      this.txQ = ['wait to open'];
+    }
+    if (res && res.created && this.openargs.creationCallback) {
+      this.openargs.creationCallback(this);
+    }
+    if (this.bg) {
+      this.txQ = this.txQ.concat(oldTxQ);
+      this.startNextTransaction(); // remove ['wait to open']
+    }
   };
 
   SQLitePlugin.prototype.databaseFeatures = {
