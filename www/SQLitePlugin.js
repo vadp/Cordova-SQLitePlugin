@@ -340,8 +340,8 @@
       }
     };
     this.finalized = true;
-    if (this.txlock && !navigator.userAgent.match(/Android/i)) {
-      // Android rolls back automatically
+    if (this.txlock && !(this.db.bg && navigator.userAgent.match(/Android/i))) {
+      // Async Android batch rolls back automatically
       this.executeSql("ROLLBACK", [], succeeded, failed);
       this.run();
     } else {
@@ -368,7 +368,8 @@
       }
     };
     this.finalized = true;
-    if (this.txlock) {
+    if (this.txlock && !(this.db.bg && navigator.userAgent.match(/Android/i))) {
+      // Async Android batch commits automatically
       this.executeSql("COMMIT", [], succeeded, failed);
       this.run();
     } else {
