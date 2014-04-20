@@ -456,7 +456,7 @@ public class SQLitePlugin extends CordovaPlugin
 			}
 
 		} catch (Exception ex) {
-			ex.printStackTrace();
+			//~ ex.printStackTrace();
 			errorMessage = ex.getMessage();
 			Log.e(TAG, "executeSqlBatch error executing " +  query + ": " + errorMessage);
 
@@ -480,8 +480,9 @@ public class SQLitePlugin extends CordovaPlugin
 			if (bgWorkaround && mydb != null && mydb.inTransaction()) {
 				if ("".equals(errorMessage)) {
 					mydb.setTransactionSuccessful();
+				} else {
+					Log.d(TAG, "executeSqlBatch bgWorkaround endTransaction " + errorMessage);
 				}
-				Log.d(TAG, "executeSqlBatch bgWorkaround endTransaction " + errorMessage);
 				mydb.endTransaction();
 			}
 		}
